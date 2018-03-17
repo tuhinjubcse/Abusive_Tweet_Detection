@@ -1,5 +1,4 @@
 from string import punctuation
-from preprocess_twitter import tokenize as tokenizer_g
 from gensim.parsing.preprocessing import STOPWORDS
 
 
