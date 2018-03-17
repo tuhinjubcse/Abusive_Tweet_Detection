@@ -41,13 +41,13 @@ sys.setdefaultencoding('utf8')
 word2vec_model = None
 freq = defaultdict(int)
 vocab, reverse_vocab = {}, {}
-EMBEDDING_DIM = 25
+EMBEDDING_DIM = 300
 tweets = {}
 MAX_SENT_LENGTH = 0
 MAX_SENTS = 0
 MAX_NB_WORDS = 20000
 VALIDATION_SPLIT = 0.1
-INITIALIZE_WEIGHTS_WITH = 'random'
+INITIALIZE_WEIGHTS_WITH = 'glove'
 SCALE_LOSS_FUN = True
 
 
@@ -141,12 +141,14 @@ def select_tweets():
     # Processing
     tweets = get_data()
     tweet_return = []
+    c = 1
     for tweet in tweets:
         _emb = 0
         words = glove_tokenize(tweet['text'].lower())
         for w in words:
             if w in word2vec_model:  # Check if embeeding there in GLove model
                 _emb+=1
+        c = c+1
         if _emb:   # Not a blank tweet
             tweet_return.append(tweet)
     print('Tweets selected:', len(tweet_return))
@@ -183,7 +185,9 @@ def lstm_model(sequence_length, embedding_dim):
     model = Sequential()
     model.add(Embedding(len(vocab)+1, embedding_dim, input_length=sequence_length, trainable=True))
     # model.add(Dropout(0.25))#, input_shape=(sequence_length, embedding_dim)))
-    model.add(LSTM(50))
+    model.add(Bidirectional(LSTM(50,return_sequences=True)))
+    model.add(Dropout(0.25))
+    model.add(Bidirectional(LSTM(50)))
     model.add(Dropout(0.25))
     model.add(Dense(3))
     model.add(Activation('softmax'))
@@ -193,7 +197,7 @@ def lstm_model(sequence_length, embedding_dim):
 
 
 
-def train_LSTM(X, y, model, inp_dim, weights, epochs=10, batch_size=512):
+def train_LSTM(X, y, model, inp_dim, weights, epochs=15, batch_size=512):
     cv_object = KFold(n_splits=10, shuffle=True, random_state=42)
     print cv_object
     p, r, f1 = 0., 0., 0.
@@ -216,7 +220,6 @@ def train_LSTM(X, y, model, inp_dim, weights, epochs=10, batch_size=512):
             for X_batch in batch_gen(X_temp, 512):
                 x = X_batch[:, :sentence_len]
                 y_temp = X_batch[:, sentence_len]
-
                 class_weights = None
                 if SCALE_LOSS_FUN:
                     class_weights = {}
@@ -257,7 +260,7 @@ def train_LSTM(X, y, model, inp_dim, weights, epochs=10, batch_size=512):
 
 
 np.random.seed(42)
-word2vec_model = gensim.models.KeyedVectors.load_word2vec_format('./glove.twitter.27B.25d.txt')
+word2vec_model = gensim.models.KeyedVectors.load_word2vec_format('./datastories.twitter.300d.txt')
 tweets = select_tweets()
 gen_vocab()
 X, y = gen_sequence()
@@ -270,9 +273,3 @@ data, y = sklearn.utils.shuffle(data, y)
 W = get_embedding_weights()
 model = lstm_model(data.shape[1], EMBEDDING_DIM)
 train_LSTM(data, y, model, EMBEDDING_DIM, W)
-
-
-
-
-
-
