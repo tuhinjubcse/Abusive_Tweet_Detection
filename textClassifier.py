@@ -258,7 +258,7 @@ def train_LSTM(X, y, model, inp_dim, weights, epochs=15, batch_size=512):
 
 
 np.random.seed(42)
-word2vec_model = gensim.models.KeyedVectors.load_word2vec_format('./datastories.twitter.300d.txt')
+word2vec_model = gensim.models.KeyedVectors.load_word2vec_format('EMBEDDING_FILE_PATH')
 tweets = select_tweets()
 gen_vocab()
 X, y = gen_sequence()
