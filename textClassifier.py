@@ -182,7 +182,6 @@ def lstm_model(sequence_length, embedding_dim):
     print('Model variation is %s' % model_variation)
     model = Sequential()
     model.add(Embedding(len(vocab)+1, embedding_dim, input_length=sequence_length, trainable=True))
-    # model.add(Dropout(0.25))#, input_shape=(sequence_length, embedding_dim)))
     model.add(Bidirectional(LSTM(50,return_sequences=True)))
     model.add(Dropout(0.25))
     model.add(Bidirectional(LSTM(50)))
