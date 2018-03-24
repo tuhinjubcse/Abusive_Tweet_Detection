@@ -50,7 +50,7 @@ MAX_SENTS = 0
 MAX_NB_WORDS = 20000
 VALIDATION_SPLIT = 0.1
 INITIALIZE_WEIGHTS_WITH = 'glove'
-SCALE_LOSS_FUN = True
+SCALE_LOSS_FUN = False
 
 
 class AttLayer(Layer):
@@ -148,8 +148,8 @@ def select_tweets():
             if w in word2vec_model:  # Check if embeeding there in GLove model
                 _emb+=1
         c = c+1
-        if _emb:   # Not a blank tweet
-            tweet_return.append(tweet)
+        # if _emb:   # Not a blank tweet
+        tweet_return.append(tweet)
     print('Tweets selected:', len(tweet_return))
     #pdb.set_trace()
     return tweet_return
@@ -162,7 +162,7 @@ def gen_vocab():
         text = glove_tokenize(tweet['text'].lower())
         text = ' '.join([c for c in text if c not in punctuation])
         words = text.split()
-        words = [word for word in words if word not in STOPWORDS]
+        # words = [word for word in words if word not in STOPWORDS]
 
         for word in words:
             if word not in vocab:
@@ -199,12 +199,14 @@ def lstm_model(sequence_length, embedding_dim):
 
 
 
-def train_LSTM(X, y, model,inp_dim, weights, epochs=15, batch_size=512):
+def train_LSTM(X, y, model,inp_dim, weights, epochs=10, batch_size=512):
     cv_object = KFold(n_splits=10, shuffle=True, random_state=42)
     print cv_object
     p, r, f1 = 0., 0., 0.
     p1, r1, f11 = 0., 0., 0.
     sentence_len = X.shape[1]
+    print y[0:50] ,  y[4778:4795]
+    c = 1
     for train_index, test_index in cv_object.split(X):
         # model = lstm_model(X.shape[1], EMBEDDING_DIM)
         if INITIALIZE_WEIGHTS_WITH == "glove":
@@ -238,29 +240,24 @@ def train_LSTM(X, y, model,inp_dim, weights, epochs=15, batch_size=512):
                     print y_temp
                 loss, acc = model.train_on_batch(x, y_temp, class_weight=class_weights)
                 # print loss, acc
-
+        f = open('./deep/cv_'+str(c),'w')
         y_pred = model.predict_on_batch(X_test)
         y_pred = np.argmax(y_pred, axis=1)
+        for i in range(len(y_pred)):
+            f.write(str(y_pred[i])+'\n')
+        c = c+1
         print classification_report(y_test, y_pred)
         print precision_recall_fscore_support(y_test, y_pred)
         # print y_pred
         p += precision_score(y_test, y_pred, average='weighted')
-        p1 += precision_score(y_test, y_pred, average='micro')
         r += recall_score(y_test, y_pred, average='weighted')
-        r1 += recall_score(y_test, y_pred, average='micro')
         f1 += f1_score(y_test, y_pred, average='weighted')
-        f11 += f1_score(y_test, y_pred, average='micro')
 
     NO_OF_FOLDS = 10
-    print "macro results are"
+    print "weighted results are"
     print "average precision is %f" %(p/NO_OF_FOLDS)
     print "average recall is %f" %(r/NO_OF_FOLDS)
     print "average f1 is %f" %(f1/NO_OF_FOLDS)
-
-    print "micro results are"
-    print "average precision is %f" %(p1/NO_OF_FOLDS)
-    print "average recall is %f" %(r1/NO_OF_FOLDS)
-    print "average f1 is %f" %(f11/NO_OF_FOLDS)
 
 
 np.random.seed(42)
