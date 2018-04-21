@@ -53,7 +53,8 @@ MAX_NB_WORDS = 20000
 VALIDATION_SPLIT = 0.1
 INITIALIZE_WEIGHTS_WITH = 'glove'
 SCALE_LOSS_FUN = False
-n_gram_features_num = 1
+n_gram_features_num = 300
+X_tweet = None
 
 
 class AttLayer(Layer):
@@ -132,27 +133,23 @@ def batch_gen(X1, X2): # X1 and X2 have same number of samples. Batch created wi
 
             yield batch1, batch2
 
+def getUserFeatures():
+    X = []
+    tweetsFrom = []
+    tweet_to_user = {}
+    for line in open('./tweet_user.txt'):
+        user = line.strip().split('\t')[0]
+        tweet = line.strip().split('\t')[1]
+        tweet_to_user[tweet] = user
+    for line in open('./shuffled_data.txt'):
+        line = line.strip().split()
+        line.pop()
+        line = ' '.join(line)
+        X.append(tweet_to_user[line])
+        tweetsFrom.append(line)
+    return np.asarray(X),tweetsFrom
 
-def get_tfidf_features():
-    tweets = get_data()
-    y_map = {
-            'none': 0,
-            'racism': 1,
-            'sexism': 2
-            }
 
-    X, y = [], []
-    flag = True
-    for tweet in tweets:
-        text = glove_tokenize(tweet['text'].lower())
-        text = ' '.join([c for c in text if c not in punctuation])
-        X.append(text)
-        y.append(y_map[tweet['label']])
-    tfidf_transformer = TfidfVectorizer(ngram_range=(1,2), analyzer='word',stop_words='english',max_features=5000)
-    X_tfidf = tfidf_transformer.fit_transform(X)
-    print(X_tfidf.shape)
-
-    return X_tfidf, np.array(y)
 
 def get_embedding(word):
     #return
@@ -194,28 +191,7 @@ def gen_sequence():
         y.append(y_map[tweet['label']])
     return X, y
 
-def getAbusiveFeatures():
-    y_map = {
-            'none': 0,
-            'racism': 1,
-            'sexism': 2
-            }
-    f = open('abusive_dict.txt','r')
-    m = {}
-    for line in f:
-        line = line.strip()
-        m[line]=True
-    tweets = get_data()
-    X, y = [], []
-    for tweet in tweets:
-        text = glove_tokenize(tweet['text'].lower())
-        c = 0
-        for word in text:
-            if word in m:
-                c = c+1
-        X.append([c])
-        y.append(y_map[tweet['label']])
-    return np.array(X),np.array(y)
+
 
 def select_tweets():
     # selects the tweets as in mean_glove_embedding method
@@ -274,11 +250,10 @@ def lstm_model(sequence_length,embeddings_matrix, embedding_dim,X_tfidf):
     model1.add(Bidirectional(LSTM(150,return_sequences=True)))
     model1.add(Dropout(0.25))
     model1.add(AttLayer())
-    # model1.add(Flatten())
     print model1.summary()
 
     model2 = Sequential()
-    model2.add(InputLayer(input_shape=(X_tfidf.shape[1],)))
+    model2.add(InputLayer(input_shape=(300,)))
     print model2.summary()
 
     model = Sequential()
@@ -296,7 +271,7 @@ def lstm_model(sequence_length,embeddings_matrix, embedding_dim,X_tfidf):
 
 
 
-def train_LSTM(X, y, X_tfidf, y_tfidf,inp_dim, weights, epochs=12, batch_size=512):
+def train_LSTM(X, y, X_tfidf, y_tfidf,inp_dim, weights, epochs=10, batch_size=512):
     cv_object = KFold(n_splits=10, shuffle=True, random_state=42)
     print cv_object
     p, r, f1 = 0., 0., 0.
@@ -304,13 +279,8 @@ def train_LSTM(X, y, X_tfidf, y_tfidf,inp_dim, weights, epochs=12, batch_size=51
     sentence_len = X.shape[1]
     c = 1
     for train_index, test_index in cv_object.split(X):
-        # model = lstm_model(X.shape[1], EMBEDDING_DIM)
         if INITIALIZE_WEIGHTS_WITH == "glove":
             model = lstm_model(sentence_len,weights ,EMBEDDING_DIM,X_tfidf)
-        #     shuffle_weights(model)
-        #     model.layers[0].set_weights([weights])
-        # elif INITIALIZE_WEIGHTS_WITH == "random":
-        #     shuffle_weights(model)
         else:
             print "ERROR!"
             return
@@ -319,8 +289,22 @@ def train_LSTM(X, y, X_tfidf, y_tfidf,inp_dim, weights, epochs=12, batch_size=51
         y_train1 = y_train1.reshape((len(y_train1), 1))
         X_temp1 = np.hstack((X_train1, y_train1))
 
+
         X_train2, y_train2 = X_tfidf[train_index], y_tfidf[train_index]
         X_test2, y_test2 = X_tfidf[test_index], y_tfidf[test_index]
+        user_train_model = gensim.models.KeyedVectors.load_word2vec_format('./user_embeddings/user_train_'+str(c)+'.txt')
+        user_test_model = gensim.models.KeyedVectors.load_word2vec_format('./user_embeddings/user_test_'+str(c)+'.txt')
+
+        X_train_user = []
+        X_test_user = []
+        for k in range(len(X_train2)):
+            X_train_user.append(user_train_model[X_train2[k]])
+        for k in range(len(X_test2)):
+            X_test_user.append(user_test_model[X_test2[k]])
+        X_train_user = np.asarray(X_train_user)
+        X_test_user = np.asarray(X_test_user)
+        X_train2 = X_train_user
+        X_test2 = X_test_user
         y_train2 = y_train2.reshape((len(y_train2), 1))
         X_temp2 = np.hstack((X_train2, y_train2))
 
@@ -333,11 +317,6 @@ def train_LSTM(X, y, X_tfidf, y_tfidf,inp_dim, weights, epochs=12, batch_size=51
                 curr_X2 = X_batch2[:, :n_gram_features_num]
                 curr_Y2 = X_batch2[:, n_gram_features_num]
                 class_weights = None
-                # if SCALE_LOSS_FUN:
-                #     class_weights = {}
-                #     class_weights[0] = np.where(y_temp == 0)[0].shape[0]/float(len(y_temp))
-                #     class_weights[1] = np.where(y_temp == 1)[0].shape[0]/float(len(y_temp))
-                #     class_weights[2] = np.where(y_temp == 2)[0].shape[0]/float(len(y_temp))
 
                 try:
                     curr_Y1 = to_categorical(curr_Y1, nb_classes=3)
@@ -345,11 +324,11 @@ def train_LSTM(X, y, X_tfidf, y_tfidf,inp_dim, weights, epochs=12, batch_size=51
                 except Exception as e:
                     print e
                 loss, acc = model.train_on_batch([curr_X1,curr_X2], curr_Y1, class_weight=None)
-        f = open('./deep/cv_'+str(c),'w')
         y_pred = model.predict_on_batch([X_test1, X_test2])
         y_pred = np.argmax(y_pred, axis=1)
-        for i in range(len(y_pred)):
-            f.write(str(y_pred[i])+'\n')
+        f = open('./CV/cv_'+str(c)+'_labels.txt','w')
+        for q in range(len(y_pred)):
+            f.write(str(y_pred[q])+'\t'+str(y_test1[q])+'\n')
         c = c+1
         print classification_report(y_test1, y_pred)
         print precision_recall_fscore_support(y_test1, y_pred)
@@ -371,15 +350,13 @@ word2vec_model = gensim.models.KeyedVectors.load_word2vec_format('./datastories.
 tweets = select_tweets()
 gen_vocab()
 X, y = gen_sequence()
-# X_tfidf , y_tfidf = get_tfidf_features()
-X_abs , y_abs = getAbusiveFeatures()
-# X_tfidf = X_tfidf.todense()
 
 MAX_SEQUENCE_LENGTH = max(map(lambda x:len(x), X))
 print "max seq length is %d"%(MAX_SEQUENCE_LENGTH)
-
 data = pad_sequences(X, maxlen=MAX_SEQUENCE_LENGTH)
 y = np.array(y)
-data, y, X_tfidf, y_tfidf = sklearn.utils.shuffle(data, y,X_abs, y_abs)
+y_user = y
+data, y = sklearn.utils.shuffle(data, y)
+X_user,X_tweet = getUserFeatures()
 W = get_embedding_weights()
-train_LSTM(data, y, X_tfidf, y_tfidf, EMBEDDING_DIM, W)
+train_LSTM(data, y, X_user, y_user, EMBEDDING_DIM, W)
