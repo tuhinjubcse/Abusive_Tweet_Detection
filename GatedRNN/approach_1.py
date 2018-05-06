@@ -1,0 +1,124 @@
+import numpy as np
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import roc_auc_score
+from keras.models import Model
+from keras.layers import Input, Dense, Embedding, SpatialDropout1D, concatenate
+from keras.layers import GRU, Bidirectional, GlobalAveragePooling1D, GlobalMaxPooling1D
+from keras.preprocessing import text, sequence
+from keras.callbacks import Callback
+from sklearn.metrics import f1_score
+from sklearn.metrics import classification_report
+
+import os, csv
+from keras.utils import plot_model
+from IPython.display import SVG
+from keras.utils.vis_utils import model_to_dot
+
+
+
+os.environ['OMP_NUM_THREADS'] = '4'
+np.random.seed(42)
+# Download embeddings here : https://github.com/cbaziotis/datastories-semeval2017-task4
+EMBEDDING_FILE = 'datastories.twitter.300d.txt'
+train = pd.read_csv('train.csv')
+test = pd.read_csv('test.csv')
+# output has results on the test set, each category would have score between 0-1
+output = 'output.csv'
+
+X_train = train["text"].fillna("fillna").values
+y_train = train[["none", "racism", "sexism"]].values
+X_test = test["text"].fillna("fillna").values
+
+max_features = 24879
+maxlen = 300
+embed_size = 300
+
+tokenizer = text.Tokenizer(num_words=max_features)
+tokenizer.fit_on_texts(list(X_train) + list(X_test))
+X_train = tokenizer.texts_to_sequences(X_train)
+X_test = tokenizer.texts_to_sequences(X_test)
+x_train = sequence.pad_sequences(X_train, maxlen=maxlen)
+x_test = sequence.pad_sequences(X_test, maxlen=maxlen)
+
+
+def get_coefs(word, *arr):
+    return word, np.asarray(arr, dtype='float32')
+
+
+embeddings_index = dict(get_coefs(*o.rstrip().rsplit(' ')) for o in open(EMBEDDING_FILE))
+
+word_index = tokenizer.word_index
+nb_words = min(max_features, len(word_index))
+embedding_matrix = np.zeros((nb_words, embed_size))
+for word, i in word_index.items():
+    if i >= max_features: continue
+    embedding_vector = embeddings_index.get(word)
+    if embedding_vector is not None: embedding_matrix[i] = embedding_vector
+
+
+class F_score_eval(Callback):
+    def __init__(self, validation_data=(), interval=1):
+        super(Callback, self).__init__()
+
+        self.interval = interval
+        self.X_val, self.y_val = validation_data
+
+    def on_epoch_end(self, epoch, logs={}):
+        if epoch % self.interval == 0:
+            y_pred = self.model.predict(self.X_val, verbose=0)
+            labels = []
+            predictions = []
+            for i in range(len(y_pred)):
+                x = np.argmax(y_pred[i])
+                y = np.argmax(self.y_val[i])
+                predictions.append(x)
+                labels.append(y)
+            print(predictions)
+            print(labels)
+            # score = roc_auc_score(self.y_val, y_pred)
+            target_names = ["none", "racism", "sexism"]
+            print("Epoch: " + str(epoch + 1))
+            print(classification_report(labels, predictions, target_names=target_names))
+            # print("\n Classification res - epoch: %d - score: %.6f \n" % (epoch + 1, score))
+
+
+def get_model():
+    inp = Input(shape=(maxlen,))
+    x = Embedding(max_features, embed_size, weights=[embedding_matrix])(inp)
+    x = SpatialDropout1D(0.2)(x)
+    x = Bidirectional(GRU(80, return_sequences=True))(x)
+    avg_pool = GlobalAveragePooling1D()(x)
+    max_pool = GlobalMaxPooling1D()(x)
+    conc = concatenate([avg_pool, max_pool])
+    outp = Dense(3, activation="softmax")(conc)
+
+    model = Model(inputs=inp, outputs=outp)
+    model.compile(loss='binary_crossentropy',
+                  optimizer='adam',
+                  metrics=['accuracy'])
+
+    return model
+
+
+model = get_model()
+plot_model(model, to_file='model.png')
+
+SVG(model_to_dot(model).create(prog='dot', format='svg'))
+
+batch_size = 128
+epochs = 3
+
+X_tra, X_val, y_tra, y_val = train_test_split(x_train, y_train, train_size=0.90, random_state=233)
+F_pred = F_score_eval(validation_data=(X_val, y_val), interval=1)
+
+hist = model.fit(X_tra, y_tra, batch_size=batch_size, epochs=epochs, validation_data=(X_val, y_val),
+                 callbacks=[F_pred], verbose=2)
+
+y_pred = model.predict(x_test, batch_size=1024)
+print (y_pred)
+with open(output, 'w') as outfile:
+    writer = csv.writer(outfile)
+    writer.writerow(["none", "racism", "sexism"])
+    for row in y_pred:
+        writer.writerow([str(row[0]), str(row[1]), str(row[2])])
