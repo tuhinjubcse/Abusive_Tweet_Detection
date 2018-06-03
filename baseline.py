@@ -26,35 +26,10 @@ def get_top_features(tfidf_transformer):
         top_features = sorted(features, key=lambda x: x[1], reverse=True)[:top_n]
         top_features = [f[0] for f in top_features]
         print('{}-gram top:'.format(gram), top_features)
-        if 'mkr' in top_features:
-            print 'Yessss'
-
-def getAbusiveFeatures():
-    f = open('abusive_dict.txt','r')
-    m = {}
-    for line in f:
-        line = line.strip()
-        m[line]=True
-    tweets = get_data()
-    X = []
-    for tweet in tweets:
-        text = glove_tokenize(tweet['text'].lower())
-        c = 0
-        for word in text:
-            if word in m:
-                c = c+1
-        X.append(c)
-    return np.array(X)
-
+       
 
 def get_tfidf_features():
     tweets = get_data()
-    y_map = {
-            'none': 0,
-            'racism': 1,
-            'sexism': 2
-            }
-
     X, y = [], []
     flag = True
     for tweet in tweets:
@@ -62,8 +37,8 @@ def get_tfidf_features():
         text = ' '.join([c for c in text if c not in punctuation])
         if y_map[tweet['label']]==2:
             X.append(text)
-            y.append(y_map[tweet['label']])
-    tfidf_transformer = TfidfVectorizer(ngram_range=(1,1), analyzer='word',stop_words='english',max_features=10)
+            y.append(int([tweet['label']]))
+    tfidf_transformer = TfidfVectorizer(ngram_range=(1,2), analyzer='word',stop_words='english',max_features=2000)
     X_tfidf = tfidf_transformer.fit_transform(X)
     print(X_tfidf.shape)
 
@@ -94,14 +69,14 @@ def train_randomforest(train_X, train_Y, test_X, test_Y, estimators,iter):
     classifier = RandomForestClassifier(n_estimators=estimators,class_weight = None)
     classifier.fit(train_X, train_Y)
 
-    f = open('./baseline/cv_'+str(iter),'w')
-    pred_Y = classifier.predict(test_X)
-    for i in range(len(pred_Y)):
-        f.write(str(pred_Y[i])+'\n')
+    # f = open('./baseline/cv_'+str(iter),'w')
+    # pred_Y = classifier.predict(test_X)
+    # for i in range(len(pred_Y)):
+    #     f.write(str(pred_Y[i])+'\n')
 
-    f = open('./test/cv_'+str(iter),'w')
-    for i in range(len(test_Y)):
-        f.write(str(test_Y[i])+'\n')
+    # f = open('./test/cv_'+str(iter),'w')
+    # for i in range(len(test_Y)):
+    #     # f.write(str(test_Y[i])+'\n')
 
     # print(confusion_matrix(test_Y, pred_Y))
 
@@ -172,42 +147,36 @@ def train_SVM(train_X, train_Y, test_X, test_Y):
 
 if __name__ == '__main__':
     np.random.seed(42)
-    # Xabs = getAbusiveFeatures()
     X, Y = get_tfidf_features()
-    # X = np.concatenate((X, Xabs), axis=1)
-    # print X[0]
-    # X, Y = sklearn.utils.shuffle(X, Y)
-    # print X[12] , type(X[12]), X[12].shape
-    # # X = np.asarray(X)
-    # # Y = np.asarray(Y)
    
-    # prec_w, recall_w, f1_w, prec_m, recall_m, f1_m = 0., 0., 0., 0., 0., 0.
-    # c = 1
-    # cv_object = KFold(n_splits=10, shuffle=True, random_state=42)
-    # for train_index, test_index in cv_object.split(X):
-    #     X_train, Y_train = X[train_index], Y[train_index]
-    #     X_test, Y_test = X[test_index], Y[test_index]
+   
+    prec_w, recall_w, f1_w, prec_m, recall_m, f1_m = 0., 0., 0., 0., 0., 0.
+    c = 1
+    cv_object = KFold(n_splits=10, shuffle=True, random_state=42)
+    for train_index, test_index in cv_object.split(X):
+        X_train, Y_train = X[train_index], Y[train_index]
+        X_test, Y_test = X[test_index], Y[test_index]
 
-    #     macro_precision, macro_recall, macro_f1, weighted_precision, weighted_recall, weighted_f1 = train_randomforest(
-    #         X_train, Y_train, X_test, Y_test, 500,c)
+        macro_precision, macro_recall, macro_f1, weighted_precision, weighted_recall, weighted_f1 = train_randomforest(
+            X_train, Y_train, X_test, Y_test, 500,c)
 
-    #     prec_w += weighted_precision
-    #     prec_m += macro_precision
-    #     recall_w += weighted_recall
-    #     recall_m += macro_recall
-    #     f1_w += weighted_f1
-    #     f1_m += macro_f1
-    #     c = c+1
+        prec_w += weighted_precision
+        prec_m += macro_precision
+        recall_w += weighted_recall
+        recall_m += macro_recall
+        f1_w += weighted_f1
+        f1_m += macro_f1
+        c = c+1
 
-    # print("weighted results are")
-    # print("average precision is %f" % (prec_w / 10))
-    # print("average recall is %f" % (recall_w / 10))
-    # print("average f1 is %f" % (f1_w / 10))
+    print("weighted results are")
+    print("average precision is %f" % (prec_w / 10))
+    print("average recall is %f" % (recall_w / 10))
+    print("average f1 is %f" % (f1_w / 10))
 
-    # print("macro results are")
-    # print("average precision is %f" % (prec_m / 10))
-    # print("average recall is %f" % (recall_m / 10))
-    # print("average f1 is %f" % (f1_m / 10))
+    print("macro results are")
+    print("average precision is %f" % (prec_m / 10))
+    print("average recall is %f" % (recall_m / 10))
+    print("average f1 is %f" % (f1_m / 10))
 
 # train_GBC(train_X_tfidf.todense(), train_Y, dev_X_tfidf.todense(), dev_Y, 500)
 # train_SVM(train_X_tfidf.todense(), train_Y, dev_X_tfidf.todense(), dev_Y)
